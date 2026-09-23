@@ -19,7 +19,7 @@ I would measure both the total inference bill and the cost per successful predic
 
 Each team currently deploys and operates models in its own way. This creates duplicated capacity, uneven response times, and little visibility into cost or model health. During traffic spikes, teams add capacity manually and tend to keep more than they need.
 
-The timing matters. Search and Personalization need a solution next quarter, while the platform team starts with only three engineers. I would spend the first two weeks measuring current workloads and costs, agreeing on service targets with model owners, and learning what serving tools Quince already has. I would confirm the definition of the 30% target with Finance before claiming any savings.
+The timing matters. Search and Personalization need a solution next quarter, while the platform team starts with only three engineers. I would spend the first two weeks measuring current workloads and costs, agreeing on service targets with model owners, and learning what serving tools the organization already has. I would confirm the definition of the 30% target with Finance before claiming any savings.
 
 ### 2. Consider the options
 
@@ -61,7 +61,7 @@ The **model serving layer** executes the model call. It loads the requested mode
 | Triton | Execute suitable GPU models, including models that benefit from batching |
 | Simple model service | Serve a CPU model when it meets the target without a heavier stack |
 
-These tools are not all alternatives at the same level. KServe could manage a deployment running Triton. An inference application could call that deployment. Ray Serve could run both an application workflow and some of its model services. I would select the smallest combination that handles the two launch models well, based on what Quince already runs and tests with representative traffic.
+These tools are not all alternatives at the same level. KServe could manage a deployment running Triton. An inference application could call that deployment. Ray Serve could run both an application workflow and some of its model services. I would select the smallest combination that handles the two launch models well, based on what the organization already runs and tests with representative traffic.
 
 The **deployment controller** turns an approved version into a running service. A model owner registers a versioned artifact. CI/CD tests it and promotes an approved version with its deployment specification. The controller then compares what should be running with what is actually running. It provisions the model in the selected serving runtime, starts and warms new replicas, checks their health and required features, and keeps the old version available.
 
@@ -101,7 +101,7 @@ I would request two more senior engineers for the later migration and optimizati
 These are examples based on work the engineers have written or posted publicly. I have not worked with them, and I do not know whether they are available.
 
 - **Rajat Shah, Staff Software Engineer at Netflix.** Rajat posted about model routing at Netflix and coauthored the underlying technical article. His work is relevant to a gateway that routes requests to the right model version while keeping the request path reliable.
-- **Oleksandr Pryimak, Staff Software Engineer at Thumbtack.** Oleksandr wrote about building a shared inference service for teams that had been using separate systems. I like how directly that experience maps to Quince's need for one practical path to production across ML teams.
+- **Oleksandr Pryimak, Staff Software Engineer at Thumbtack.** Oleksandr wrote about building a shared inference service for teams that had been using separate systems. I like how directly that experience maps to the organization's need for one practical path to production across ML teams.
 - **Saurabh Vishwas Joshi, Principal Engineer at Pinterest.** Saurabh posted about Pinterest's move to GPU serving for recommendation models. His experience is relevant to choosing capacity and improving runtime efficiency while meeting response-time targets.
 - **Guangtong Bai, Staff Software Engineer at Pinterest.** Guangtong posted about work to reduce network use in production ML and coauthored the technical article. I like the focus on costs and delays outside model execution, which fits the end-to-end measurement this plan calls for.
 
@@ -136,4 +136,4 @@ At six months, I would judge success by results rather than the number of platfo
 | Faster model releases | Teams can deploy and roll back a version with less manual platform work |
 | Shared adoption | At least four ML teams run production workloads on the platform |
 
-The platform succeeds if it makes model launches easier for teams, keeps customer-facing services healthy, and gives Quince a clear way to control inference cost.
+The platform succeeds if it makes model launches easier for teams, keeps customer-facing services healthy, and gives the organization a clear way to control inference cost.

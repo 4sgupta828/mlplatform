@@ -4,7 +4,7 @@
 
 ## Scenario
 
-Quince relies on a growing portfolio of ML models across the business — product recommendations, dynamic pricing, fraud detection, search ranking, and personalization. Each of these models was developed and deployed independently by separate teams, resulting in a fragmented infrastructure landscape with no shared serving layer.
+The organization relies on a growing portfolio of ML models across the business — product recommendations, dynamic pricing, fraud detection, search ranking, and personalization. Each of these models was developed and deployed independently by separate teams, resulting in a fragmented infrastructure landscape with no shared serving layer.
 
 This fragmentation is creating serious pain points: inference costs are growing faster than revenue, with duplicated GPU provisioning across teams. Latency SLAs are inconsistent — some models respond in 20ms, others in 500ms+ with no clear accountability. There is no centralized visibility into cost-per-prediction, model health, or capacity utilization. When traffic spikes occur (e.g., flash sales), teams scramble to manually scale their own endpoints, often over-provisioning to avoid downtime.
 
