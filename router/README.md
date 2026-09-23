@@ -71,15 +71,39 @@ The three comparison policies (all spill on capacity):
 > tie-breaks on hourly rate, the router on per-request cost (occupancy × hourly).
 > They tie when the cheapest-hourly instance is also cheapest per request; the
 > router wins when a pricier-but-faster instance has lower occupancy cost — see
-> `scenarios/cost-tradeoff.json`:
->
-> ```
-> policy         served  dropped%   total_cost    cost/success
-> cost-aware          6       0%     $0.000063       $0.000011   (all -> gpu-fast)
-> cheapest-fit        6       0%     $0.000119       $0.000020   (all -> cpu-slow)
-> ```
-> Same drops, but cost-aware is **47% cheaper** — it sees the $0.50/hr CPU is
-> pricier *per request* than the $1.20/hr GPU because it is slower.
+> [Where the router beats a smart baseline](#where-the-router-beats-a-smart-baseline).
+
+## Where the router beats a smart baseline
+
+`cheapest-fit` is a strong baseline — it already respects SLAs, so on most
+scenarios it matches the router's **drop rate**. To see the router's real edge you
+need a pool where the cheapest *hourly* instance is **not** the cheapest *per
+request*. `scenarios/cost-tradeoff.json` is built for exactly that:
+
+| Instance | Price | Latency | Meets 200ms SLA? |
+|---|---|---|---|
+| `cpu-slow` | $0.50/hr | 90ms | yes |
+| `gpu-fast` | $1.20/hr | 20ms | yes |
+
+```bash
+python3 -m router.cli route scenarios/cost-tradeoff.json
+```
+
+```
+policy         served  dropped%   total_cost    cost/success   routing
+cost-aware          6       0%     $0.000063     $0.000011      all -> gpu-fast
+cheapest-fit        6       0%     $0.000119     $0.000020      all -> cpu-slow
+```
+
+Same SLAs met, same zero drops — but **cost-aware is ~47% cheaper per success.**
+Cost is `occupancy_time × hourly_rate`, so the per-request cost is:
+
+- `cpu-slow`: 90ms × $0.50/hr → proxy **45**
+- `gpu-fast`: 20ms × $1.20/hr → proxy **24**  ← cheaper
+
+`cheapest-fit` picks `cpu-slow` because $0.50/hr looks cheapest; the router sees
+the slow CPU actually costs *more per request* than the fast GPU and routes
+everything to the GPU. That occupancy-awareness is the router's edge.
 
 ## How it works (spec §4)
 

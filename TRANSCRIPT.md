@@ -171,3 +171,22 @@ extension points. Linked it from `README.md`.
 
 Wrapping up: committed the prototype (router package, scenarios, tests, docs,
 spec, transcript) on a feature branch and pushed. 33 tests passing.
+Then fast-forward merged `feature/cost-aware-router` into `main` and pushed main.
+
+### Prompt 13
+> How a run flows end to end in Architecture.md is bit confusing, please see if
+> you can simplify principally - Load from static data --> Run under different
+> policies --> Produce a report (may be a bit more)
+
+Simplified the "How a run flows end to end" section in `router/ARCHITECTURE.md`
+around three stages (① Load static data → ② Run under each policy → ③ Produce a
+report), with a single left-to-right diagram and one short paragraph per stage.
+
+### Prompt 14
+> can we add Scenario exposing the router's edge to README.md
+> [then] commit and push to remote
+
+Added a standalone **"Where the router beats a smart baseline"** section to
+`router/README.md` (cost-tradeoff scenario: cpu-slow vs gpu-fast, ~47% cheaper
+per success, with the per-request cost math); replaced the buried blockquote table
+with a link. Committed the doc updates and pushed to `main`.

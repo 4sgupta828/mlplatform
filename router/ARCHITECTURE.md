@@ -75,37 +75,40 @@ primitives so the two policy families are measured identically.
 
 ## How a run flows end to end
 
+Three stages, and that's the whole program:
+
+> **① Load static data → ② Run it under each policy → ③ Produce a report**
+
 ```mermaid
-flowchart TB
-    F["scenario.json"] --> L["models.load_scenario<br/>parse · resolve base times · validate"]
-    L --> S["Scenario<br/>(requests, instances, resolved_base)"]
-    S --> R["router.route<br/>CostAwareRouter"]
-    S --> B["baselines<br/>cheapest · cheapest-fit · fastest"]
-    R --> RES1["RoutingResult (cost-aware)"]
-    B --> RES2["RoutingResult × 3"]
-    RES1 --> RP["report.build_report<br/>aggregate + metrics"]
-    RES2 --> RP
-    S --> RP
-    RP --> REP["Report"]
-    REP --> T["render_table -> stdout"]
-    REP --> J["to_dict -> JSON"]
+flowchart LR
+    F["scenario.json<br/>(static input)"] -->|① Load| S["Scenario"]
+    S -->|② Run| P["4 policies:<br/>cost-aware +<br/>3 baselines"]
+    P --> D["decisions<br/>per policy"]
+    D -->|③ Report| R["Report<br/>-> table + JSON"]
 ```
 
-1. **Load (`models`).** `load_scenario` parses JSON, then **resolves** every
-   servable `(instance, model)` pair to a base latency (measured if given, else a
-   default, each tagged with its source), then **validates**. Bad input raises
-   `ScenarioError` and the CLI exits non-zero. The result is an immutable-enough
-   `Scenario` the rest of the program reads.
-2. **Route (`router`).** `CostAwareRouter.route()` walks the requests in a fixed
-   order and produces one `Decision` per request (see pipeline below).
-3. **Baselines (`baselines`).** The same requests are re-run under three simpler
-   policies, each returning its own `RoutingResult`. They reuse `router`'s
-   `request_order`, `_matched_instances`, and the `latency` formulas, so only the
-   *selection rule* differs.
-4. **Report (`report`).** `build_report` aggregates all four `RoutingResult`s into
-   per-model, per-priority, and per-policy summaries with the comparison metrics.
-5. **Render (`cli`).** The table goes to stdout; `--json` also writes the machine
-   form. Logs (defaults used, Watch alerts) go to stderr.
+**① Load — turn a file into trustworthy, static data (`models`).**
+`load_scenario` parses the JSON, fills in any missing base latency from defaults,
+and validates. Bad input is rejected here (exit non-zero) so the later stages
+never see half-valid data. Output: one immutable `Scenario` — the fixed
+experiment setup that every policy sees identically.
+
+**② Run — route the same requests under each policy (`router`, `baselines`).**
+Four policies each take the *same* `Scenario` and independently decide where every
+request goes: the `cost-aware` router plus three baselines (`always-cheapest`,
+`cheapest-fit`, `always-fastest`). Each returns a `RoutingResult` — a list of
+`Decision`s (`served` / `missed_sla` / `unassigned`). Because they share the same
+request order, matching, and latency/cost formulas, the *only* thing that varies
+is the selection rule — so any difference in the results is caused by the policy,
+nothing else. (What one policy does per request is the pipeline below.)
+
+**③ Report — score the policies side by side (`report`, `cli`).**
+`build_report` aggregates all four results into per-model, per-priority, and
+per-policy metrics, and `cli` prints the comparison table (and JSON with
+`--json`). This is where "did cost-aware win?" gets answered in numbers.
+
+That's it. Everything else in this doc is detail *inside* one of these three
+stages.
 
 ## The routing pipeline (the actual experiment)
 
