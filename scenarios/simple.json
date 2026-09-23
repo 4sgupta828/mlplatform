@@ -1,0 +1,20 @@
+{
+  "name": "simple",
+  "config": {
+    "queue_factor": 1.0,
+    "default_base_latency_ms": { "cpu": 100, "gpu": 20 }
+  },
+  "requests": [
+    { "id": "r1", "model_id": "reco:v1", "priority": "high",   "sla_ms": 200 },
+    { "id": "r2", "model_id": "reco:v1", "priority": "medium", "sla_ms": 200 },
+    { "id": "r3", "model_id": "reco:v1", "priority": "low",    "sla_ms": 200 }
+  ],
+  "instances": [
+    { "id": "gpu-1", "kind": "gpu", "models": ["reco:v1"],
+      "hourly_cost": 3.60, "base_latency_ms": { "reco:v1": 20 },
+      "concurrency": 2, "load": 0, "healthy": true },
+    { "id": "cpu-1", "kind": "cpu", "models": ["reco:v1"],
+      "hourly_cost": 0.40, "base_latency_ms": {},
+      "concurrency": 4, "load": 0, "healthy": true }
+  ]
+}

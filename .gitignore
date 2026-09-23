@@ -1,2 +1,7 @@
 # Local working drafts — not tracked
 *.draft.md
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/

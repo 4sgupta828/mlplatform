@@ -1,0 +1,36 @@
+{
+  "name": "flash-sale",
+  "config": {
+    "queue_factor": 1.0,
+    "watch_miss_threshold": 0.5,
+    "watch_window": 10,
+    "drop_penalty_usd": 0.00005,
+    "default_base_latency_ms": { "cpu": 120, "gpu": 25 }
+  },
+  "requests": [
+    { "id": "s1", "model_id": "search:v3", "priority": "high",   "sla_ms": 60 },
+    { "id": "s2", "model_id": "search:v3", "priority": "high",   "sla_ms": 60 },
+    { "id": "s3", "model_id": "search:v3", "priority": "high",   "sla_ms": 60 },
+    { "id": "s4", "model_id": "search:v3", "priority": "medium", "sla_ms": 60 },
+    { "id": "s5", "model_id": "search:v3", "priority": "low",    "sla_ms": 60 },
+    { "id": "s6", "model_id": "search:v3", "priority": "low",    "sla_ms": 60 },
+    { "id": "f1", "model_id": "fraud:v2",  "priority": "high",   "sla_ms": 300 },
+    { "id": "f2", "model_id": "fraud:v2",  "priority": "medium", "sla_ms": 300 },
+    { "id": "f3", "model_id": "fraud:v2",  "priority": "low",    "sla_ms": 300 },
+    { "id": "f4", "model_id": "fraud:v2",  "priority": "low",    "sla_ms": 300 }
+  ],
+  "instances": [
+    { "id": "gpu-1", "kind": "gpu", "models": ["search:v3", "fraud:v2"],
+      "hourly_cost": 3.60, "base_latency_ms": { "search:v3": 20, "fraud:v2": 10 },
+      "concurrency": 2, "load": 0, "healthy": true },
+    { "id": "gpu-2", "kind": "gpu", "models": ["search:v3"],
+      "hourly_cost": 3.60, "base_latency_ms": { "search:v3": 22 },
+      "concurrency": 2, "load": 0, "healthy": true },
+    { "id": "cpu-1", "kind": "cpu", "models": ["search:v3", "fraud:v2"],
+      "hourly_cost": 0.40, "base_latency_ms": { "search:v3": 120, "fraud:v2": 40 },
+      "concurrency": 4, "load": 0, "healthy": true },
+    { "id": "cpu-2", "kind": "cpu", "models": ["fraud:v2"],
+      "hourly_cost": 0.30, "base_latency_ms": { "fraud:v2": 50 },
+      "concurrency": 4, "load": 0, "healthy": true }
+  ]
+}
