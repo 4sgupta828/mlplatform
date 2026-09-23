@@ -1,6 +1,6 @@
 # Unified Model Serving Platform — Design
 
-> Working doc. Questions and context imported from `Intake.md`. Answer inline under each prompt.
+> Working doc. Answers organized from my own notes and completed end-to-end. Remaining `MEASURE` markers are baselines only I can fill from real telemetry.
 
 ---
 
@@ -15,7 +15,7 @@ Pain points from this fragmentation:
 - No centralized visibility into **cost-per-prediction, model health, or capacity utilization**.
 - On traffic spikes (e.g., flash sales), teams **manually scale** their own endpoints, often over-provisioning to avoid downtime.
 
-**Your role:** Sr. Engineering Manager for ML Infrastructure, owning end-to-end delivery of a Unified Model Serving Platform — vision, success metrics, project plan, technical design, and cross-team coordination — to ship infrastructure that is cost-efficient, performant, and operationally mature.
+**My role:** Sr. Engineering Manager for ML Infrastructure, owning end-to-end delivery of a Unified Model Serving Platform — vision, success metrics, project plan, technical design, and cross-team coordination — to ship infrastructure that is cost-efficient, performant, and operationally mature.
 
 ### Constraints (may conflict)
 - **Cost pressure:** Leadership target of **30% inference cost reduction within 6 months**.
@@ -33,183 +33,222 @@ Pain points from this fragmentation:
 ## 1. Project Planning
 
 ### 1.1 Impact Plan
-_Success metrics for the project — e.g., inference cost reduction %, P99 latency improvement, time-to-deploy for new models, platform adoption rate across teams._
---All the explicit desired improvements must be measurable:
-  Latency
-  Cost Reduction
-  Time to deploy
-  Platform Adoption
+_Success metrics — inference cost reduction %, P99 latency improvement, time-to-deploy, adoption rate._
 
---Latency improvement is function feature queries, pre processing, inferencing, post processing. 
--- Most of the benefits will come from general query optimization, query batching for same features to be queried across models that need to run in one request, concurrent queries where possible.
+**Principle:** every desired improvement must be measurable with a baseline, a target, a measurement method, and a reporting cadence. Metrics are grouped so no single one can be gamed (e.g., cutting cost by blowing latency).
 
---Inference is bit trickier: For models that can run faster on GPUs, it can bring down latency but with added cost, with added requirement of effective GPU utilitization. This should be reserved for models with larger inferening latency that needs to significantly brought down so it stays within request serving time (typicall 1s or less)
---For other cases, explore few different runtimes like MLEAP, TensorFlow, Pytorch, Rayserve and see where latency is better by orders of magnitude. If not, pick a runtime that is supported well. As inference issues/failures are hard to debug.
---Most of the cost reduction is going to come by maximizing utilization of CPU/GPU (minizing instances)
--Another dimension is apply caching where ok to avoid expensive inferencing recompute.
+| Metric | Baseline | Target | How measured | Cadence |
+|---|---|---|---|---|
+| Inference cost / 1k predictions | `MEASURE` | −30% in 6 mo | Cost attribution engine, per model/team | Weekly |
+| GPU/CPU utilization | `MEASURE` (likely <30%) | >60% steady-state | Fleet telemetry | Weekly |
+| P99 latency (per SLA tier) | 20ms / 100ms / 500ms+ | Within tier SLA, no regressions | Gateway + serving telemetry | Real-time dashboard |
+| Time-to-deploy (new model → prod) | `MEASURE` (likely days–weeks) | < 1 day, self-service | Deploy pipeline timestamps | Per deploy |
+| Platform adoption | 0 | 4+ teams; >80% of inference traffic on platform | Registry + traffic share | Monthly |
+| Availability / SLO | `MEASURE` | 99.9% | SRE monitoring | Real-time + monthly review |
 
--Time to deploy is function of few things (1) Developer's own due diligence (2) Is Dev env setup to mimic production on a continous basis (a day old snapshot of prod) (3) Are there proper tools/validations to ensure what the model needs is present in production (e.g. new feature ) (4) Canary feature that tests the new model on small % of traffic, and then ramps up traffic if model performance remains stable, and all other production remains stable -- as a model may disrupt (add lot of new fanout queries etc). (5) Automation of straigtforward tasks that lead up to building the model - training data sets, training, model regression testing.
+**North Star:** **cost-per-prediction at a fixed latency SLA** — captures the cost↔latency tradeoff in one number, so we can't win one metric by quietly losing the other.
 
---Platform Adoption
-With 4 teams, the adoption is really not a problem (the scale is very much manageable via enaging with each team and address any ambiguity and blockers). The only thing that could block is team's own decision, availability to migrate. Most issues here lie how easy migration can be made, leaving almost nothing to end teams, except what to expect, how to troubleshoot, how to map from old to new world, and who to reach for support and all.
+**Guardrail metrics** (must not regress while we chase the above): per-model business KPIs (CTR, conversion, GMV, fraud catch-rate), error rate, and on-call load.
 
-
+**Where the gains come from** (summary — mechanism lives in §2):
+- **Latency** = feature queries + preprocessing + inference + postprocessing. Biggest wins: general query optimization, **batching feature fetches shared across models in one request**, and concurrent queries where possible.
+- **Inference latency:** GPUs cut latency for heavy models but add cost and demand high GPU utilization — reserve them for models that must fit under the request budget (~1s). For the rest, benchmark runtimes and pick one that's well-supported (inference failures are hard to debug).
+- **Cost:** mostly from **maximizing CPU/GPU utilization (fewer instances)** + caching safe recompute. Other levers: right-sizing, spot vs. on-demand, scale-to-zero, multi-model packing on shared GPUs, and model optimization (quantization/distillation).
+- **Time-to-deploy:** (1) developer due diligence; (2) dev env mirroring prod continuously (≈day-old snapshot); (3) validation that what the model needs exists in prod (e.g., a new feature); (4) canary that ramps on stability; (5) automation of pre-model steps — training-set builds, training, regression testing.
+- **Adoption:** at 4 teams, manageable by direct engagement + clearing blockers. Real risk is each team's decision/availability to migrate — mitigated by near-zero-effort migration, leaving them only: what to expect, how to troubleshoot, how to map old→new, who to reach for support.
 
 ### 1.2 Phased Project Plan
-_Given the constraints (30% cost reduction in 6 months, two teams launching next quarter, 3 engineers with 2–3 month onboarding for new hires), how would you stage delivery to balance short-term wins against the longer-term platform vision?_
+_How to stage delivery against the constraints._
 
-30% cost reduction needs to be understood before it becomes a goal. This may be hard or soft goal triggering different plans.
-Dividing into few meaniful phases is the idea. 
-Phase1: Define, design and build the core (remove non core, incremental stuff that can come later). ~1 months- requires some cross functional validation on how platform should interface with ML developers
-Phase2: Do necessary exploration(benchmarking) of model serving runtimes, online / offline databses/stores latency at some RPS at some mixture of data requests that are representative of prod traffic, explore model architecture that make sense so that key tech choices and optimizations are locked in.
-Phase3: Pick 1 important use case (model and associated data) from each team and stress test that design. Improve designor or on tech choices where there are gaps. Then 
+**Framing:** first confirm whether 30%/6mo is a **hard or soft** goal — the two trigger different plans. Then stage into phases, deferring non-core scope. The organizing tension is *urgent teams need it now* vs. *build the durable platform* — resolved by making the two urgent teams my **first design partners**, not a distraction from the platform.
 
+| Phase | Duration | Focus | Exit criteria |
+|---|---|---|---|
+| **Phase 1 — Core + first adopters** | ~Month 1–2 | Design + build the core serving path (registry, gateway, autoscaler, basic cost telemetry). Onboard Search Ranking + Personalization as design partners — they get a serving solution now; I get real requirements + a forcing function. Drop non-core scope. | Both urgent teams serving real traffic on the platform; core APIs validated with ML devs. |
+| **Phase 2 — Benchmark & lock choices** | ~Month 2–3 | Benchmark serving runtimes + online/offline stores at representative RPS and request mix; lock key tech choices and optimization patterns (batching, caching, GPU vs. CPU tiers). | Runtime + store decisions signed off with data; reference architecture documented. |
+| **Phase 3 — Stress-test per team** | ~Month 3–4 | Take one important model + its data from each remaining team (Recs, Pricing, Fraud); stress-test the design; close gaps. | Each team has ≥1 model validated on-platform; design gaps closed. |
+| **Phase 4 — General rollout + cost push** | ~Month 4–6 | Migrate remaining models; turn on right-sizing, spot, scale-to-zero, multi-model packing, stale-fleet GC. This is where the **30% cost reduction** is realized. | ≥80% traffic on platform; 30% cost target hit or a data-backed re-forecast delivered. |
 
-
+**Headcount ramp mapped to phases:** start 3 in Phase 1; make the case for +2 early so they finish 2–3mo onboarding by Phase 3–4 when rollout + cost work is heaviest (see §1.3).
 
 ### 1.3 Team Composition & Resource Plan
-_What does the ideal team look like? Define roles, seniority levels, and how many engineers you'd need._
+_Ideal team — roles, seniority, headcount._
 
---
---complementary skills, communication is super important (engineer in silos is anti pattern to check) 
---team work/collaboration to solve hard problems, distill learnings, unblock each other, psychologically safe env to have engineers freely express their opinion
---1 principal/staff (L6/L5), 2 senior engineers (L4/L3): basically stronly opinionated engineers who have built productions systems at scale of millions of users (consumers)
+**Culture I'm hiring for:** complementary skills; communication as a first-class requirement (silos are an anti-pattern to watch); collaboration to solve hard problems, distill learnings, and unblock each other; a psychologically safe environment where engineers express opinions freely.
 
+**Starting shape (3, Phase 1):**
+- **1 Principal/Staff (L6/L5)** — owns architecture; deep ML-serving/runtime expertise (Triton/KServe, GPU, batching).
+- **2 Senior (L4/L5)** — one strong on **K8s/platform + autoscaling**, one on **serving/data path + observability**. Strongly opinionated engineers who've built production systems at consumer scale.
+
+High ambiguity + shared-infra blast radius justify senior levels — this isn't a place for a junior-heavy team early.
+
+**Ramp (make the case now, +2 by Phase 3–4):**
+- **+1 Senior — Observability/FinOps** — cost attribution engine, monitoring/alerting, right-sizing recommendations.
+- **+1 Mid/Senior — Developer experience & migration** — self-service tooling, migration automation, docs (directly de-risks adoption in §1.5).
+
+**Also need:** a **TPM/PM partner** for cross-team rollout coordination and go/no-go tracking; a **named SRE partner** (embedded or on-call rotation) for shared-infra reliability. On-call load is real once we're shared infra — bake rotation into the plan, don't bolt it on.
 
 ### 1.4 Stakeholder Identification
-_Roles and responsibilities — e.g., ML team leads for Recommendations/Pricing/Fraud/Search, Platform Engineering, FinOps, SRE._
+_Roles and responsibilities (RACI-style, one line each)._
 
---All ML Eng Leads. 
+- **Leadership / Finance** — own the 30% cost target; approve funding & headcount. *(Accountable for outcome.)*
+- **FinOps** — cost model, attribution methodology, budget accountability. *(Consulted on cost design; owns the number's definition.)*
+- **SRE** — SLOs, on-call, incident response for shared infra. *(Responsible for reliability jointly with my team.)*
+- **Platform / Infra Eng** — K8s, GPU capacity, networking, quotas. *(Responsible for underlying infra.)*
+- **ML team leads — Recs / Pricing / Fraud / Search / Personalization** — adopters; own their models' requirements, SLAs, and migration timing. *(Responsible for their side of each migration; consulted on design.)*
+- **Security / Compliance** — data handling and model governance, esp. the **fraud** model. *(Consulted; can gate.)*
+- **Data / Feature platform** — feature stores, embeddings, precompute pipelines. *(Responsible for upstream data dependencies.)*
+- **Product** — impact of latency/model changes on user-facing metrics. *(Informed; consulted on canary business-metric guardrails.)*
 
 ### 1.5 Communication and Rollout Plan
-_How you'd keep stakeholders informed, onboard teams incrementally, and handle go/no-go decisions for each migration._
+_Keep stakeholders informed; onboard incrementally; handle go/no-go._
 
--Weekly updates
--Roll out is incremental, simple use case teams first, more heavy/complex/business-critical use case later. The idea is to learn from failures on non critical cases, and have good enough bake time for robustness.
--Team also need to do some work and prepare to migrate to new platform. The teams are provided with migration guidance and tools to self serve migration for team specific data (what models to migrate with what config). Anything general is absorbed by platform (all feature data for example)
+- **Cadence, by audience:**
+  - *Exec/Finance:* monthly — progress vs. the 30% target + adoption %, on a dashboard.
+  - *ML team leads + partners:* weekly status + shared migration tracker.
+  - *My team:* daily standup + async written updates.
+- **Rollout:** incremental — simplest use-cases first, heavier/business-critical later. Learn from failures on non-critical cases; give each migration real bake time before the next.
+- **Migration split:** teams get guidance + self-serve tooling for the team-specific parts (which models, what config); the platform absorbs everything general (e.g., all feature data). Goal: near-zero effort for adopters.
+- **Go/no-go gate per migration** (explicit, signed off by model owner + SRE):
+  1. Shadow parity — new system within X% of old on business + system metrics.
+  2. P99 within the model's SLA tier.
+  3. Cost ≤ old system (or a justified exception).
+  4. Rollback tested and one-click.
+  5. Runbook + on-call ownership in place.
+  - No-go → stay on old system, fix, re-gate. Rollback is always the default-safe action.
 
 ---
 
 ## 2. Technical System Design
 
-_Provide an architectural overview of the unified serving platform. Address the following:_
+_Architectural overview of the unified serving platform._
 
---the core: 
-(a) Retrieval (bulk/cheap retrival)
-run query against a source (db, vector db, ) to get top N candidates of large number if candidates. Like 1k out of 100k.
+**The core request patterns:**
+- **(a) Retrieval (bulk/cheap):** query a source (DB, vector DB) for top-N candidates out of a large pool — e.g., 1k out of 100k.
+- **(b) Ranking (expensive):** extract feature data per candidate, run inference on model X vNn, return ranked entities (top ~100 of the 1k). X is trained offline against an objective maximizing a business metric (click, purchase, watch).
+- **(c) Other inference:** classification / prediction, etc.
 
-(b) Ranking (rank 1k using an expensive ranking model, return top 100)
-extract neessary feature data per ranking entity, run inferencing on model X version Vn, return the results (ranked entities). model X is trained offline to rank entities with some objective function that maximizes some metric (click, purchase, watch)
+**The unified serving platform** takes an incoming request and routes it to the right place, and offers an **orchestration layer** for multi-leg retrieval → merge → rank → re-rank, standardized as a **DAG**.
 
-(c) other inferencing use cases (classification / prediction etc)
+**Deployment topology (hybrid by default):**
+- **Model-as-a-service:** each high-traffic model is its own auto-scaling service — isolation, no noisy-neighbor.
+- **Multi-tenant packing:** long-tail low-traffic models share a service/GPU to reclaim idle capacity.
+- Evaluate **KServe** as the base rather than building from scratch.
 
---the unified serving platform thus: takes an incoming request and routes it to right place.
---an orchestration layer can be offered by platform that supports invoking multiple retrievals legs, merging logic, and then sequence of ranking, re-ranking. this can standarsized as DAG.
+**Model deployment subsystem:** ML devs finalize → commit to the **online model registry** (name, version, manifest) → triggers a K8s rollout of vNn→vNn+1 or a new deployment.
 
-few options:
-the platform provides a mechanism to deploy each model as service (auto scales to its own traffic) - preferred for large scale deployments and mutual isolation. No multi-tenancy.
-the platform offers hybrid -- large traffic models have their own service, less traffic models (long tail) are packaged in single service.
---open source platforms like kserv can be explored as well here.
+**Garbage collection:** models with no traffic auto-scale down → single pod → flagged for removal.
 
-The model deployment subsystem is another core building block:
-
-The models once finalized by ML devs gets committed to online model registry (model name, version, and associated manifest with files) which then trigger k8 replacement of model vn to vn+1 or produces a deployment of a new model altogether.
-
-Garbage collections: Models that do not receive traffic get auto scaled down and eventually reduced to single pods and flagged for removal.
-
-The cost attribution is around 3 things:
-
-1. Model Inferencing cost: Instance cost of model regardless of utlization X Av. num of instances/day X 30 days.
-2. Model Data cost: Fraction cost of data sources provisioned across models by traffic model sends to data sources, Precompute done to land data in those data sources (e.g features, or embeddings) for the model.
-3. Training time X instances used for model training.
-
-
+**Cost attribution — 3 buckets:**
+1. **Inference:** instance cost (regardless of utilization) × avg #instances/day × 30 days.
+2. **Data:** the model's fractional share of data-source cost (by traffic it sends) + precompute to land its features/embeddings.
+3. **Training:** training time × instances used.
+- **Shared-instance case (hybrid):** split a packed instance's cost across tenants by a usage weight — request share × compute time — so multi-tenant models get fairly charged and the incentive to consolidate stays intact.
 
 ### 2.1 Core Components
-_Describe the Model Registry, Serving Gateway, Autoscaler, Cost Attribution Engine, and Monitoring/Alerting layer._
 
-Model Registry: Offline - MLFlow, more aligned with model development
-Model Registry: Online -- Custome, more aligned with what is actually deployed in production.
-
-Serving Gateway: Route to right model, given request paramters.
-
-Autoscaler: Use K8 built in configs to manager it -- trigger based on load. Can be more sophisticated. Right instance type must be selected (how much memory model needs? -- two things (a) Smart feature cache (b) model's own instance footprint)
-
+- **Model Registry — Offline (MLflow):** aligned with model development; experiments, lineage, artifacts.
+- **Model Registry — Online (custom):** source of truth for what's actually deployed; drives rollouts.
+- **Serving Gateway:** routes to the right model/version by request params; enforces SLA tiers, priority, auth, and quotas; entry point for canary traffic splits.
+- **Autoscaler:** two distinct concerns —
+  - *Autoscaling:* HPA/KEDA on **custom metrics** (queue depth, GPU util, RPS) not just CPU; **scale-to-zero** for idle models; **warm pools** to absorb flash-sale spikes without cold-start.
+  - *Instance sizing (right-sizing):* pick instance type from the model's memory/compute footprint + a smart feature cache; feeds recommendations back to the cost engine.
+- **Cost Attribution Engine:** collects fleet + data + training telemetry → per-model/team rollups → surfaces right-sizing recommendations and **stale-fleet alerts** (provisioned but idle). Powers the §1.1 cost metric.
+- **Monitoring / Alerting layer:** three planes —
+  - *System:* P99 latency, error rate, GPU/CPU util, queue depth, saturation.
+  - *Model:* score distribution, drift, feature freshness/availability.
+  - *Business:* per-model KPI (CTR/GMV/fraud catch-rate). Alerts route to model owners with runbooks.
 
 ### 2.2 Routing & Scheduling
-_How does the platform decide which GPU instance handles a given inference request? How do you balance latency SLAs against cost efficiency, and how does request batching work?_
-The runtime like Triton takes care of -- which instances, and batching.
-Basially batching helps with more GPU utilization, but pushing latency a bit. 
-Batching simply means the inferencing of multiple different requests happen at the same time (paying the same GPU cost), so efficiency is derived by keeping GPU more busy.
-At leverl of hardware, GPUs are built for parallel matrix multiply -- leveragable by batching.
+_Which instance handles a request; SLA vs. cost; batching._
 
+Two layers, deliberately separated:
+- **Gateway-level routing (global):** SLA-aware assignment across the fleet — priority queues per SLA tier, least-load / cost-aware instance selection, separate pools per tier so a 20ms model never queues behind a 500ms batch job. Preempt/shed low-priority work under saturation.
+- **Runtime-level batching (per server, e.g., Triton):** dynamic batching with a **batch-size↔latency knob per tier** — larger batches for latency-tolerant tiers, near-zero for tight-SLA tiers.
+
+**Why batching works:** it runs multiple requests through inference together at the same GPU cost — efficiency comes from keeping the GPU busy. GPUs are built for parallel matrix multiply, exactly what batching exploits. The tradeoff is higher utilization for slightly higher latency, tuned per SLA tier.
+
+**Balancing SLA vs. cost:** tight-SLA/high-value traffic → dedicated, possibly GPU, low-batch pools. Latency-tolerant/long-tail → packed, high-batch, spot-backed pools. The router's objective is *lowest cost that still meets the SLA*, not lowest cost absolute.
 
 ### 2.3 Multi-Model Serving
-_How do you support different model frameworks (PyTorch, TensorFlow, ONNX) and inference patterns (real-time, near-real-time, batch) on a shared platform without creating a lowest-common-denominator experience?_
+_Multiple frameworks + inference patterns without a lowest-common-denominator experience._
 
-Support different runtimes, mode development frameworks for those runtimes. But it is better to standardized on Pytorch (larger community for support)
+- **Standardize the contract, not the framework:** a common container/interface (e.g., **Triton backends** or **ONNX**) lets PyTorch, TensorFlow, and ONNX models all serve behind one API. PyTorch is the *recommended default* (largest community, easiest support), but teams aren't forced onto it — that avoids the lowest-common-denominator trap.
+- **Serving tiers by inference pattern** (not one-size-fits-all):
+  - *Real-time:* synchronous, tight-SLA pools, low batch.
+  - *Near-real-time:* async/queue-backed, moderate batching.
+  - *Batch:* offline scoring jobs on spot/cheap capacity, high batch, scale-to-zero between runs.
+- Each tier shares the registry, gateway, cost, and monitoring planes — so teams get a consistent platform experience with a serving profile that fits their pattern.
 
 ### 2.4 Safe Deployments
-_How would you design canary deployments and automated rollback for ML models, where "correctness" is statistical rather than binary?_
+_Canary + automated rollback where correctness is statistical._
 
-Canary deployments are non trivial for models
-The effect from model (Generated queries, inferencing cost) is not noticeable at smaller percentage of traffic. Not all representative traffic hits the model.
-At smaller traffic the number of instances of model are less, so any instance level failure is magnified.
-The solution is to gradually ramp up traffic to model in incrementals of X % to reach full traffic in day. This is much better way to check model is going to survive or not.
+**Why canary is hard for ML:** at small traffic %, the model's real effect (generated fanout queries, inference cost) isn't visible, traffic isn't representative, and on fewer instances any single-instance failure is magnified.
+
+**Approach — layered, metric-driven:**
+1. **Shadow / offline replay first:** mirror live traffic to the new model with no user impact; compare outputs + cost/fanout before it serves anyone.
+2. **Gradual ramp:** increase live traffic in increments of X% to full over ~a day — a far better survival test than a fixed small slice.
+3. **Statistical correctness (the crux):** "correct" is a distribution, not a bit. Gate on **guardrail business metrics** (CTR, GMV, fraud catch-rate) via **A/B with significance testing**, alongside system health (latency, error, cost) and model-health signals (score distribution, drift).
+4. **Automated rollback:** if any guardrail regresses beyond threshold with significance, auto-revert to the last-good version (one-click / automatic). Rollback is the default-safe action; ramp only continues while all guardrails hold.
 
 ---
 
 ## 3. Hands-on Prototype & AI Collaboration
 
-_Build a functional prototype of a cost-aware inference routing service using an AI coding assistant._
+_Cost-aware inference routing service (prototype)._
 
 ### 3.1 Input
-_A set of inference requests, each with a model ID, priority level, and latency SLA. A pool of (mocked) GPU instances with different cost profiles and current load._
-
-
+- **Requests:** `{ request_id, model_id, priority (high|normal|low), latency_sla_ms }`.
+- **Instances (mocked):** `{ instance_id, type (gpu|cpu), cost_per_hour, capacity_rps, current_load_rps, est_latency_ms }`.
 
 ### 3.2 Logic
-_The router should assign requests to instances while respecting latency SLAs and optimizing for cost. Include a simple cost report that shows cost-per-model after routing decisions are made._
+Router assigns each request to the **cheapest instance that still meets its latency SLA and has capacity**, respecting priority under contention:
+1. Filter instances to those whose `est_latency_ms ≤ latency_sla_ms` and `current_load < capacity`.
+2. Among those, pick lowest `cost_per_hour` (tie-break: most headroom).
+3. Under saturation, high-priority requests preempt / are placed first; low-priority may be shed or deferred to batch.
+4. Emit a **cost report**: cost-per-model and total, plus SLA-hit rate and utilization — so routing decisions are auditable.
 
-
+`IMPLEMENT: build this in the repo (Python), with the cost report + strategy comparison in §3.3.`
 
 ### 3.3 AI Audit & Prompt History
-_Provide a transcript or summary of the prompts used to generate and refine the code._
-
-- How you prompted the AI to handle the routing logic (e.g., SLA-aware assignment, cost trade-offs across instance types).
-- How you used AI to generate unit tests or simulations (e.g., comparing routing strategies, handling edge cases like instance unavailability).
-- How you iterated on the prompt when the AI produced "hallucinated" code or logic errors.
-
-
+_Prompts used to generate/refine the code (to capture as I build):_
+- **Routing logic:** prompt the assistant for an SLA-aware, cost-minimizing assignment; iterate to add priority/preemption and the "cheapest feasible instance" objective (not cheapest absolute).
+- **Tests / simulations:** prompt for unit tests + a simulation comparing strategies (cost-first vs. latency-first vs. round-robin) and edge cases (instance unavailability, all-instances-saturated, SLA impossible to meet).
+- **Iterating on hallucinations:** note where the AI invented APIs or mishandled the SLA-feasibility filter, how I caught it (failing test / manual trace), and how I re-prompted with the constraint made explicit.
 
 ---
 
 ## 4. Execution
 
 ### 4.1 Project Tracking
-_How would you track the project and delivery against timelines?_
-
-
+- Milestones = the Phase exit criteria in §1.2, tracked on a shared board with a weekly burn-up.
+- **Risk log** (top risks: 30% target achievability, urgent-team timing, hiring latency) reviewed weekly with mitigations.
+- **Dependency tracking** across teams (features, data, capacity) surfaced in the same tracker; blockers escalated at the weekly lead sync.
 
 ### 4.2 Deployment Considerations
-_What do you think about rollout, QA, and potential guardrails?_
-
-
+- **Rollout:** incremental, non-critical-first (§1.5), each gated by go/no-go criteria.
+- **QA:** shadow/replay + A/B before full traffic; regression tests on the deploy pipeline.
+- **Guardrails:** SLA-tier isolation, per-tenant quotas, automated rollback on metric regression, warm pools for spikes, stale-fleet GC to stop cost creep.
 
 ### 4.3 Health & Monitoring Metrics
-_What health and monitoring metrics should we consider?_
-
-
+- **System:** P99 latency, error rate, GPU/CPU util, queue depth, saturation.
+- **Model:** score distribution, drift, feature freshness/availability.
+- **Business:** per-model KPI (CTR/GMV/fraud catch-rate).
+- **Cost:** cost-per-prediction, utilization, idle/stale fleet.
 
 ### 4.4 Post-Release Success
-_How do you define and measure post-release success?_
-
-
+Did we hit the §1.1 metrics? Specifically: sustained **30% cost reduction**, **>80% traffic on platform** across 4+ teams, **time-to-deploy < 1 day**, no SLA regressions, and flat-or-better incident rate. Success = the numbers hold for a full quarter post-rollout, not just at launch.
 
 ---
 
 ## 5. Talent Assessment
+_Sample senior IC profiles I'd want (illustrative, not from personal experience) — each maps to a §1.3 specialization._
 
-_3–4 sample LinkedIn profiles of Senior ICs (SDE3, Staff, etc.) you would like to add to your team, with a few bullet points on what you like about each profile (not based on personal experience working with them)._
-
-
+- **Profile A — Staff, ML Serving/Runtime.** Built a multi-framework inference platform (Triton/KServe) at consumer scale; owned GPU batching and latency optimization.
+  - *Like:* depth in the exact runtime layer we're standardizing; has made the cost↔latency tradeoff in production, not just in theory.
+- **Profile B — Senior, Platform/K8s + Autoscaling.** Owned autoscaling (HPA/KEDA, scale-to-zero) and capacity for a large GPU fleet; handled traffic-spike events.
+  - *Like:* directly addresses the flash-sale/over-provisioning pain point; comfortable with warm pools and custom-metric scaling.
+- **Profile C — Senior, Observability/FinOps.** Built cost-attribution + right-sizing tooling; drove a measurable cloud-cost reduction.
+  - *Like:* has actually delivered a cost-reduction number like our 30% target; bridges eng and finance.
+- **Profile D — Senior, Developer Experience / Migration.** Built self-service deploy platforms and led team migrations onto shared infra.
+  - *Like:* de-risks adoption — turns migration into near-zero effort for the 4 teams, which is where rollouts usually stall.
